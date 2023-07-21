@@ -12,7 +12,6 @@ const decodeRequestFormData = (request) =>
   new Promise((resolve, reject) => {
     const bus = busboy({ headers: request.headers });
     let fileBuffer = null;
-    let fromFormat = null;
     let toFormat = null;
 
     bus.on("file", (fieldname, file, filename, encoding, mimetype) => {
@@ -27,38 +26,42 @@ const decodeRequestFormData = (request) =>
 
     bus.on("field", (fieldname, value) => {
       switch (fieldname) {
-        case "fromFormat":
-          fromFormat = value;
-          break;
         case "toFormat":
           toFormat = value;
-          break;
       }
     });
 
     bus.on("finish", () => {
-      fileBuffer && fromFormat && toFormat
-        ? resolve({ fileBuffer, fromFormat, toFormat })
+      fileBuffer && toFormat
+        ? resolve({ fileBuffer, toFormat })
         : reject(new Error("Missing file or format fields in the request."));
     });
 
     bus.end(request.rawBody);
   });
 
-exports.format = onRequest(async (request, response) => {
+const convert = (fileBuffer, toFormat) =>
+  sharp(fileBuffer).toFormat(toFormat).toBuffer();
+
+const respond = (response, toFormat) => (converted) =>
+  response
+    .setHeader("Content-Type", `image/${toFormat}`)
+    .setHeader(
+      "Content-Disposition",
+      `attachment; filename="converted-image.${toFormat}"`
+    )
+    .send(converted);
+
+const convertAndRespond =
+  (response) =>
+  ({ fileBuffer, toFormat }) =>
+    convert(fileBuffer, toFormat).then(respond(response, toFormat));
+
+exports.format = onRequest((request, response) =>
   decodeRequestFormData(request)
-    .then(async ({ fileBuffer, fromFormat, toFormat }) => {
-      console.log(fromFormat, "-->", toFormat);
-      const output = await sharp(fileBuffer).toFormat(toFormat).toBuffer();
-      response.setHeader("Content-Type", `image/${toFormat}`);
-      response.setHeader(
-        "Content-Disposition",
-        `attachment; filename="converted-image.${toFormat}"`
-      );
-      response.send(output);
-    })
-    .catch((err) => {
-      console.log(err);
+    .then(convertAndRespond(response))
+    .catch((error) => {
+      console.log(error);
       response.status(500).send("Something went wrong");
-    });
-});
+    })
+);
