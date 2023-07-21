@@ -6,17 +6,59 @@
 const { onRequest } = require("firebase-functions/v2/https");
 const axios = require("axios");
 const sharp = require("sharp");
+const busboy = require("busboy");
 
-exports.helloWorld = onRequest(async (request, response) => {
-  const imageUrl =
-    "http://scriptshadow.net/wp-content/uploads/2019/08/Screen-Shot-2019-08-13-at-8.09.58-PM.png";
-  const image = await axios.get(imageUrl, { responseType: "arraybuffer" });
-  const buffer = Buffer.from(image.data);
-  const output = await sharp(buffer).resize(100, 100).toBuffer();
-  response.setHeader("Content-Type", "image/png");
-  response.setHeader(
-    "Content-Disposition",
-    `attachment; filename="picture.png"`
-  );
-  response.send(output);
+const decodeRequestFormData = (request) =>
+  new Promise((resolve, reject) => {
+    const bus = busboy({ headers: request.headers });
+    let fileBuffer = null;
+    let fromFormat = null;
+    let toFormat = null;
+
+    bus.on("file", (fieldname, file, filename, encoding, mimetype) => {
+      const chunks = [];
+      file.on("data", (data) => {
+        chunks.push(data);
+      });
+      file.on("end", () => {
+        fileBuffer = Buffer.concat(chunks);
+      });
+    });
+
+    bus.on("field", (fieldname, value) => {
+      switch (fieldname) {
+        case "fromFormat":
+          fromFormat = value;
+          break;
+        case "toFormat":
+          toFormat = value;
+          break;
+      }
+    });
+
+    bus.on("finish", () => {
+      fileBuffer && fromFormat && toFormat
+        ? resolve({ fileBuffer, fromFormat, toFormat })
+        : reject(new Error("Missing file or format fields in the request."));
+    });
+
+    bus.end(request.rawBody);
+  });
+
+exports.format = onRequest(async (request, response) => {
+  decodeRequestFormData(request)
+    .then(async ({ fileBuffer, fromFormat, toFormat }) => {
+      console.log(fromFormat, "-->", toFormat);
+      const output = await sharp(fileBuffer).toFormat(toFormat).toBuffer();
+      response.setHeader("Content-Type", `image/${toFormat}`);
+      response.setHeader(
+        "Content-Disposition",
+        `attachment; filename="converted-image.${toFormat}"`
+      );
+      response.send(output);
+    })
+    .catch((err) => {
+      console.log(err);
+      response.status(500).send("Something went wrong");
+    });
 });
