@@ -4,7 +4,6 @@
  */
 
 const { onRequest } = require("firebase-functions/v2/https");
-const axios = require("axios");
 const sharp = require("sharp");
 const busboy = require("busboy");
 
@@ -40,7 +39,7 @@ const decodeRequestFormData = (request) =>
     bus.end(request.rawBody);
   });
 
-const convert = (fileBuffer, toFormat) =>
+const convert = ({ fileBuffer, toFormat }) =>
   sharp(fileBuffer).toFormat(toFormat).toBuffer();
 
 const respond = (response, toFormat) => (converted) =>
@@ -52,16 +51,11 @@ const respond = (response, toFormat) => (converted) =>
     )
     .send(converted);
 
-const convertAndRespond =
-  (response) =>
-  ({ fileBuffer, toFormat }) =>
-    convert(fileBuffer, toFormat).then(respond(response, toFormat));
-
 exports.format = onRequest((request, response) =>
   decodeRequestFormData(request)
-    .then(convertAndRespond(response))
+    .then((file) => convert(file).then(respond(response, file.toFormat)))
     .catch((error) => {
       console.log(error);
-      response.status(500).send("Something went wrong");
+      response.status(500).send("SOMETHING WENT WRONG");
     })
 );
