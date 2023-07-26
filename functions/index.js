@@ -51,7 +51,7 @@ const respond = (response, toFormat) => (converted) =>
     )
     .send(converted);
 
-exports.format = onRequest((request, response) =>
+exports.format = onRequest({ cors: "*" }, (request, response) =>
   decodeRequestFormData(request)
     .then((file) => convert(file).then(respond(response, file.toFormat)))
     .catch((error) => {
